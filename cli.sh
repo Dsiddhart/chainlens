@@ -61,7 +61,7 @@ if [[ "${1:-}" == "--block" ]]; then
   #   6. Identify coinbase, decode BIP34 height
   #   7. Write out/<block_hash>.json for each block
   # Run the test_block binary (we'll create a proper block parser shortly)
-  ./target/release/test_block "$BLK_FILE" "$REV_FILE" "$XOR_FILE"
+  ./target/release/btc-cli --block "$BLK_FILE" "$REV_FILE" "$XOR_FILE"
   
   exit_code=$?
   exit $exit_code
