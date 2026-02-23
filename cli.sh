@@ -60,10 +60,11 @@ if [[ "${1:-}" == "--block" ]]; then
   #   5. Compute merkle root and verify
   #   6. Identify coinbase, decode BIP34 height
   #   7. Write out/<block_hash>.json for each block
-
-  error_json "NOT_IMPLEMENTED" "Block parsing is not yet implemented"
-  echo "Error: Block parsing is not yet implemented" >&2
-  exit 1
+  # Run the test_block binary (we'll create a proper block parser shortly)
+  ./target/release/test_block "$BLK_FILE" "$REV_FILE" "$XOR_FILE"
+  
+  exit_code=$?
+  exit $exit_code
 fi
 
 # --- Single-transaction mode ---
@@ -84,16 +85,9 @@ fi
 # Create output directory
 mkdir -p out
 
-# TODO: Implement transaction parsing
-#   1. Read fixture JSON (network, raw_tx, prevouts)
-#   2. Parse raw_tx hex (version, inputs, outputs, witness, locktime)
-#   3. Match prevouts to inputs by (txid, vout)
-#   4. Compute txid, wtxid, fees, weight, vbytes
-#   5. Classify input/output scripts, derive addresses
-#   6. Detect RBF, timelocks, warnings
-#   7. Build and output JSON report
-#   8. Write to out/<txid>.json and print to stdout
+# Call our Rust CLI binary
+./target/release/btc-cli "$FIXTURE"
+exit_code=$?
 
-error_json "NOT_IMPLEMENTED" "Transaction parsing is not yet implemented"
-echo "Error: Transaction parsing is not yet implemented" >&2
-exit 1
+# Exit with the same code the binary returned
+exit $exit_code
