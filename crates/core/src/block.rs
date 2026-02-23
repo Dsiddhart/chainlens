@@ -196,6 +196,7 @@ pub fn parse_blocks_with_undo(
         let block = parse_block_with_undo(&block_data, block_undo)?;
 
         blocks.push(block);
+        break;
         undo_block_index += 1;
     }
 
@@ -373,9 +374,11 @@ pub fn parse_undo_file(
         match parse_block_undo_data(&undo_data) {
             Ok(block_prevouts) => {
                 all_blocks_undo.push(block_prevouts);
+                break;
             }
             Err(_) => {
                 all_blocks_undo.push(Vec::new());
+                break;
             }
         }
     }
