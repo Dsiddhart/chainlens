@@ -1,5 +1,3 @@
-
-
 use crate::hash::{double_sha256, hash_to_hex_reversed};
 use crate::reader::{ByteReader, ReadError};
 use std::fs;
@@ -131,8 +129,6 @@ pub fn compute_block_hash(header_bytes: &[u8]) -> String {
     hash_to_hex_reversed(&hash)
 }
 
-
-
 /// A parsed block with all its data
 #[derive(Debug)]
 pub struct Block {
@@ -155,13 +151,11 @@ pub struct Block {
 /// [transactions...]
 /// Parse all blocks from files with undo data
 
-
 pub fn parse_blocks_with_undo(
     blk_path: &str,
     rev_path: &str,
     xor_key: &[u8],
 ) -> Result<Vec<Block>, BlockError> {
-
     let undo_data = parse_undo_file(rev_path, xor_key)?;
 
     let data = read_and_decode_file(blk_path, xor_key)?;
@@ -193,12 +187,11 @@ pub fn parse_blocks_with_undo(
 
         let block_data = reader.read_bytes(block_size)?;
 
-        let block_undo: &[UndoPrevout] =
-            if undo_block_index < undo_data.len() {
-                &undo_data[undo_block_index]
-            } else {
-                &[]
-            };
+        let block_undo: &[UndoPrevout] = if undo_block_index < undo_data.len() {
+            &undo_data[undo_block_index]
+        } else {
+            &[]
+        };
 
         let block = parse_block_with_undo(&block_data, block_undo)?;
 
@@ -219,7 +212,6 @@ pub struct UndoPrevout {
 }
 
 /// Parse undo data for one block
-
 
 fn parse_block_undo_data(data: &[u8]) -> Result<Vec<UndoPrevout>, BlockError> {
     let mut reader = ByteReader::new(data.to_vec());
@@ -244,7 +236,10 @@ fn parse_undo_prevout(reader: &mut ByteReader) -> Result<UndoPrevout, BlockError
     let coinbase = (n_code & 1) == 1;
 
     if height > 2_000_000 {
-        return Err(BlockError::InvalidBlock(format!("Invalid height: {}", height)));
+        return Err(BlockError::InvalidBlock(format!(
+            "Invalid height: {}",
+            height
+        )));
     }
 
     // Compressed amount
@@ -252,7 +247,7 @@ fn parse_undo_prevout(reader: &mut ByteReader) -> Result<UndoPrevout, BlockError
     let value_sats = decompress_txout_amount(amount_compressed);
 
     // Compressed script: nSize encodes the script type
-   let n_size = reader.read_varint128()? as usize;
+    let n_size = reader.read_varint128()? as usize;
 
     let script_pubkey = match n_size {
         0 => {
@@ -342,14 +337,12 @@ pub fn parse_undo_file(
     file_path: &str,
     xor_key: &[u8],
 ) -> Result<Vec<Vec<UndoPrevout>>, BlockError> {
-
     let data = read_and_decode_file(file_path, xor_key)?;
     let mut reader = ByteReader::new(data);
 
     let mut all_blocks_undo = Vec::new();
 
     while reader.remaining() > 8 {
-
         let magic = match reader.read_u32_le() {
             Ok(m) => m,
             Err(_) => break,
@@ -390,7 +383,6 @@ pub fn parse_undo_file(
     Ok(all_blocks_undo)
 }
 
-
 /// Parse all transactions from a block, matching with undo data
 pub fn parse_block_with_undo(
     block_data: &[u8],
@@ -409,7 +401,6 @@ pub fn parse_block_with_undo(
     let mut transactions = Vec::new();
     let mut txids = Vec::new();
 
-   
     let mut prevout_index = 0;
 
     for tx_idx in 0..tx_count {
@@ -630,7 +621,6 @@ fn parse_block_transaction(
     let mut vin = Vec::new();
 
     for (i, (prev_txid, prev_vout, script_sig, sequence)) in inputs_data.iter().enumerate() {
-      
         let prevout = if is_coinbase {
             crate::types::Prevout {
                 value_sats: 0,
@@ -770,19 +760,56 @@ fn parse_block_transaction(
             code: "RBF_SIGNALING".to_string(),
         });
     }
-
+    let non_wit_size =
+        serialize_transaction_for_txid(version, &inputs_data, &outputs_data, locktime).len();
+    let _wit_size = if is_segwit {
+        tx_bytes_len - non_wit_size
+    } else {
+        0
+    };
     // Build transaction
     let transaction = crate::types::Transaction {
         ok: true,
         network: "mainnet".to_string(),
         segwit: is_segwit,
         txid,
-        wtxid: None,
+
+        wtxid: if is_segwit {
+            use crate::transaction::serialize_with_witness;
+            let full_bytes = serialize_with_witness(
+                version,
+                &inputs_data,
+                &outputs_data,
+                &witness_data,
+                locktime,
+            );
+            let wtxid_hash = crate::hash::double_sha256(&full_bytes);
+            Some(crate::hash::hash_to_hex_reversed(&wtxid_hash))
+        } else {
+            None
+        },
         version,
         locktime,
         size_bytes: tx_bytes_len,
-        weight: tx_bytes_len * 4,
-        vbytes: tx_bytes_len,
+        weight: if is_segwit {
+            let non_wit_size =
+                serialize_transaction_for_txid(version, &inputs_data, &outputs_data, locktime)
+                    .len();
+            let wit_size = tx_bytes_len - non_wit_size;
+            (non_wit_size * 4) + wit_size
+        } else {
+            tx_bytes_len * 4
+        },
+        vbytes: if is_segwit {
+            let non_wit_size =
+                serialize_transaction_for_txid(version, &inputs_data, &outputs_data, locktime)
+                    .len();
+            let wit_size = tx_bytes_len - non_wit_size;
+            let w = (non_wit_size * 4) + wit_size;
+            (w + 3) / 4
+        } else {
+            tx_bytes_len
+        },
         total_input_sats,
         total_output_sats,
         fee_sats,
@@ -794,7 +821,26 @@ fn parse_block_transaction(
         rbf_signaling,
         locktime_type,
         locktime_value,
-        segwit_savings: None,
+        segwit_savings: if is_segwit {
+            let non_wit_size =
+                serialize_transaction_for_txid(version, &inputs_data, &outputs_data, locktime)
+                    .len();
+            let wit_size = tx_bytes_len - non_wit_size;
+            let weight_actual = (non_wit_size * 4) + wit_size;
+            let weight_if_legacy = tx_bytes_len * 4;
+            let savings_pct =
+                ((weight_if_legacy - weight_actual) as f64 / weight_if_legacy as f64) * 100.0;
+            Some(crate::types::SegwitSavings {
+                witness_bytes: wit_size,
+                non_witness_bytes: non_wit_size,
+                total_bytes: tx_bytes_len,
+                weight_actual,
+                weight_if_legacy,
+                savings_pct: (savings_pct * 100.0).round() / 100.0,
+            })
+        } else {
+            None
+        },
         vin,
         vout,
         warnings,
@@ -802,8 +848,6 @@ fn parse_block_transaction(
 
     Ok(transaction)
 }
-
-
 
 /// Compute merkle root from a list of transaction IDs
 
@@ -890,7 +934,6 @@ pub fn extract_bip34_height(coinbase_script_sig: &[u8]) -> Option<u32> {
 
     Some(height)
 }
-
 
 pub fn block_to_output(block: &Block) -> crate::types::BlockOutput {
     use crate::types::{BlockHeaderOutput, BlockOutput, BlockStats, CoinbaseSummary};

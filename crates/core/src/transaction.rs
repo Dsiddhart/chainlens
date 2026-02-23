@@ -485,7 +485,7 @@ fn serialize_non_witness(
 }
 
 /// Serialize transaction WITH witness (for wtxid)
-fn serialize_with_witness(
+pub fn serialize_with_witness(
     version: u32,
     inputs: &[(String, u32, Vec<u8>, u32)],
     outputs: &[(u64, Vec<u8>)],
