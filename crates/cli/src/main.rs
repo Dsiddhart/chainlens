@@ -8,28 +8,74 @@ use std::fs;
 use std::process;
 
 fn main() {
-    // Get command line arguments
     let args: Vec<String> = env::args().collect();
-    
-    // We expect: program_name <fixture_path>
-    if args.len() != 2 {
-        eprintln!("Usage: {} <fixture.json>", args[0]);
-        eprintln!(r#"{{"ok":false,"error":{{"code":"INVALID_ARGS","message":"Expected fixture file path"}}}}"#);
-        process::exit(1);
-    }
-    
-    let fixture_path = &args[1];
-    
-    // Run the parser and handle result
-    match run_parser(fixture_path) {
-        Ok(()) => process::exit(0),
-        Err(err) => {
-            eprintln!("Error: {}", err);
+
+    // Block mode: btc-cli --block <blk> <rev> <xor>
+    if args.len() > 1 && args[1] == "--block" {
+        if args.len() != 5 {
+            let error = serde_json::json!({
+                "ok": false,
+                "error": {
+                    "code": "INVALID_ARGS",
+                    "message": "Block mode requires: --block <blk.dat> <rev.dat> <xor.dat>"
+                }
+            });
+            eprintln!("{}", serde_json::to_string(&error).unwrap());
             process::exit(1);
         }
+
+        let blk_path = &args[2];
+        let rev_path = &args[3];
+        let xor_path = &args[4];
+
+        match run_block_parser(blk_path, rev_path, xor_path) {
+            Ok(()) => process::exit(0),
+            Err(err) => {
+                eprintln!("Error: {}", err);
+                process::exit(1);
+            }
+        }
+
+    // Single transaction mode: btc-cli <fixture.json>
+    } else if args.len() == 2 {
+        let fixture_path = &args[1];
+        match run_parser(fixture_path) {
+            Ok(()) => process::exit(0),
+            Err(err) => {
+                eprintln!("Error: {}", err);
+                process::exit(1);
+            }
+        }
+
+    } else {
+        eprintln!("Usage: {} <fixture.json>", args[0]);
+        eprintln!("       {} --block <blk.dat> <rev.dat> <xor.dat>", args[0]);
+        let error = serde_json::json!({
+            "ok": false,
+            "error": {"code": "INVALID_ARGS", "message": "Invalid arguments"}
+        });
+        eprintln!("{}", serde_json::to_string(&error).unwrap());
+        process::exit(1);
     }
 }
 
+fn run_block_parser(blk_path: &str, rev_path: &str, xor_path: &str) -> Result<(), String> {
+    let xor_key = btc_core::block::read_xor_key(xor_path)
+        .map_err(|e| format!("Failed to read XOR key: {:?}", e))?;
+
+    let blocks = btc_core::block::parse_blocks_with_undo(blk_path, rev_path, &xor_key)
+        .map_err(|e| format!("Failed to parse blocks: {:?}", e))?;
+
+    fs::create_dir_all("out")
+        .map_err(|e| format!("Failed to create out/ directory: {}", e))?;
+
+    for block in &blocks {
+        btc_core::block::write_block_json(block, "out")
+            .map_err(|e| format!("Failed to write block JSON: {:?}", e))?;
+    }
+
+    Ok(())
+}
 /// Main parsing logic
 fn run_parser(fixture_path: &str) -> Result<(), String> {
     
