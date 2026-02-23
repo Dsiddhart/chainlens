@@ -17,4 +17,8 @@ for gz in fixtures/blocks/*.dat.gz; do
   fi
 done
 
+# Build the Rust project
+echo "Building project..."
+cargo build --release
+
 echo "Setup complete"
